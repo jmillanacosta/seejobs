@@ -60,6 +60,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState(''); const [pendingAction, setPendingAction] = useState('');
   const [draft, setDraft] = useState(null); const [editInput, setEditInput] = useState(null);
+  const [perfHistory, setPerfHistory] = useState([]);
   const maxScroll=useRef(0);
   const jobs = data.jobs.filter(j => (!filter || (filter === 1 ? active(j) : failed(j))) && `${j.id} ${j.name} ${j.state}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => Number(active(b))-Number(active(a)) || Number(b.id.split('_')[0])-Number(a.id.split('_')[0]) || b.id.localeCompare(a.id));
   const selected = jobs.find(j => j.id === id) || jobs[0];
@@ -76,7 +77,7 @@ function App() {
   useEffect(() => {
     if(!selectedId) return;
     const c = new AbortController(); let busy = false;
-    const load = async () => {if(busy) return; busy=true; try {const d=await request(host,{op:'detail',job:jobRef.current},c.signal);if(!c.signal.aborted){setDetail(d);setDetailError('');}}catch(e){if(!c.signal.aborted)setDetailError(clean(e.message));}finally{busy=false;}};
+    const load = async () => {if(busy) return; busy=true; try {const d=await request(host,{op:'detail',job:jobRef.current},c.signal);if(!c.signal.aborted){setDetail(d);setDetailError(''); const rss=(d.steps||[]).reduce((n,s)=>Math.max(n,Number.parseInt(s.rss)||0),0); const cpu=(d.steps||[]).reduce((n,s)=>n+Number.parseFloat(s.cpu)||n,0); setPerfHistory(h=>[...h,{rss,cpu}].slice(-48));}}catch(e){if(!c.signal.aborted)setDetailError(clean(e.message));}finally{busy=false;}};
     load(); const timer=paused?null:setInterval(load,5000); return()=>{clearInterval(timer);c.abort();};
   }, [selectedId,tick,paused]);
   const logs = detail?.logs || []; const log = logs[logIndex] || logs[0];
@@ -136,7 +137,8 @@ function App() {
     right=pane('PAST PERFORMANCE',displayLines(lines.join('\n'),body-4));
   }else if(view===5){
     const steps=detail?.steps||[]; const rss=steps.map(s=>Number.parseInt(s.rss)||0); const max=Math.max(1,...rss);
-    const lines=[`${selected?selected.name:'Select a job'} · live accounting view`,'','RESOURCE PROFILE',...steps.map((s,i)=>`${s.id}  CPU ${s.cpu||'—'}  elapsed ${s.elapsed||'—'}  RSS ${s.rss||'—'}`),'','PEAK RSS'];
+    const spark=(key,maxValue)=>{const glyph='▁▂▃▄▅▆▇█';const vals=perfHistory.map(p=>p[key]||0);return vals.length?vals.map(v=>glyph[Math.min(7,Math.round((v/Math.max(1,maxValue))*7))]).join(''):'—';};
+    const lines=[`${selected?selected.name:'Select a job'} · live accounting view`,'','CPU HISTORY  '+spark('cpu',Math.max(1,...perfHistory.map(p=>p.cpu||0))),`RSS HISTORY  ${spark('rss',Math.max(1,...perfHistory.map(p=>p.rss||0)))}`,'','RESOURCE PROFILE',...steps.map((s,i)=>`${s.id}  CPU ${s.cpu||'—'}  elapsed ${s.elapsed||'—'}  RSS ${s.rss||'—'}`),'','PEAK RSS'];
     if(rss.length) lines.push(...rss.map((v,i)=>`${steps[i].id.padEnd(12)} ${'█'.repeat(Math.max(1,Math.round(v/max*24)))} ${steps[i].rss||'—'}`)); else lines.push('No accounting samples are available yet.');
     lines.push('','Refreshes every 5s while live. Filter jobs with /; tabs 1–5.');
     right=pane('JOB PERFORMANCE · CPU / MEMORY',displayLines(lines.join('\n'),body-4));
@@ -160,7 +162,7 @@ function App() {
   return h(Box,{flexDirection:'column',height:height-1,width},
     h(Box,{justifyContent:'space-between'},line(' ◉ seejobs',{bold:true,color:'cyan'}),line(`${host} · ${paused?'PAUSED':loading?'refreshing…':updated||'connecting…'} `,{dimColor:true})),
     line(` ${data.jobs.filter(active).length} active   ${data.jobs.filter(failed).length} unsuccessful   ${data.jobs.length} jobs / ${days}d   ${data.nodes.filter(n=>/drain|down|fail/i.test(n.state)).length} unhealthy nodes`,{color:'white'}),
-    line(` 1 Overview   2 Logs   3 Nodes   4 History   5 Performance  │  ${['All','Active','Failed / cancelled'][filter]}  ${search?'Search: ':query?'Filter: ':''}${query}${search?'▌':''}`,{color:'cyan'}),
+    h(Text,{key:'nav'},h(Text,{color:'yellow',bold:true},'1'),line('verview   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'2'),line('ogs   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'3'),line('odes   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'4'),line('istory   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'5'),line(`erformance  │  ${['All','Active','Failed / cancelled'][filter]}  ${search?'Search: ':query?'Filter: ':''}${query}${search?'▌':''}`,{color:'cyan'})),
     h(Box,{height:body},h(Box,{width:Math.min(36,Math.floor(width*.3)),flexShrink:0,flexDirection:'column',borderStyle:'round',borderColor:!focus?'cyan':'gray',paddingX:1},line(`JOBS ${!focus?'• focused':''}`,{bold:true,color:'cyan'}),...jobs.slice(start,start+body-4).map(j=>line(`${j.id===selectedId?'›':' '} ${j.id} ${j.state==='RUNNING'?'●':failed(j)?'×':j.state==='PENDING'?'◷':'✓'} ${j.name} ${j.partition||''} ${j.nodes||''} ${j.cpus||''} ${j.gres||''}`,{key:j.id,color:color(j),inverse:j.id===selectedId,wrap:'truncate'}))),right),
     line(error?`STALE · ${error}`:detailError?`DETAIL ERROR · ${detailError}`:data.warnings.join(' · ')||`Focus: ${focus?'details/logs':'job list'} · View ${view} · ${full?'full file': 'live tail'} · ${split?'split logs':'single log'}`,{color:error||detailError||data.warnings.length?'yellow':'gray',wrap:'truncate'}),
     line(' ↑↓ jobs/scroll  Tab focus  / search  a filter  r refresh  p pause  q quit',{dimColor:true}),
