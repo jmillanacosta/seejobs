@@ -12,7 +12,7 @@ seejobs --once
 Requires Node 22+, SSH authentication, and Python 3 plus Slurm commands on the server. The supplied local launcher selects an installed compatible Node. `cluster seejobs` is a local convenience wrapper that launches seejobs against the configured SSH host. Nothing is installed on the cluster, and no jobs are submitted or changed.
 
 - **1 Overview**: state, resources, scheduler reason, error excerpts, measured peak RSS and total CPU time per job step.
-- **2 Logs**: stderr and stdout side by side. Tail refreshes every five seconds. `s` toggles split/single; arrows select a file in single/full mode.
+- **2 Logs**: stderr and stdout side by side. Tail refreshes automatically. `/` enables split stderr/stdout; `v` toggles full-file browsing.
 - **3 Nodes**: node state, allocated/idle/other/total CPUs, RAM and scheduler drain/down reason.
 - **4 History**: recent outcomes, durations and resource requests. Select a job and use Overview for measured performance.
 - Up/down or j/k selects a job. Tab moves focus to scroll details/logs. Page Up/Down scroll without moving the job selection. g/G jumps to top/bottom of the loaded text.

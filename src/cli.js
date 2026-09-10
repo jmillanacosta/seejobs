@@ -34,7 +34,7 @@ if (!host || !user || host.startsWith('-') || !/^[\w.@-]+$/.test(host) || !/^[\w
   console.error(`Run seejobs --config first. Config file: ${configPath}`); process.exit(1);
 }
 if (args.includes('--help')) {
-  console.log(`seejobs — Slurm dashboard over SSH\n\ncluster seejobs [--config]\nseejobs --config          first-run or edit local identity settings\nseejobs --once             JSON snapshot, without a terminal\n\n↑/↓ or j/k jobs   Tab focus pane   1 overview   2 logs   3 nodes   4 history\n/ search   a all/active/failed   r refresh   p pause   q quit\nLogs: ←/→ choose file   s split stdout/stderr   f full file / live tail\nPgUp/PgDn scroll   g top   G bottom   [/] previous/next full-file chunk\nPolling: jobs/nodes every 15s; selected job/log tail every 5s.\n`); process.exit(0);
+  console.log(`seejobs — Slurm dashboard over SSH\n\ncluster seejobs [--config]\nseejobs --config          first-run or edit local identity settings\nseejobs --once             JSON snapshot, without a terminal\n\n↑/↓ or j/k jobs   Tab focus pane   1 overview   2 logs   3 nodes   4 history\n/ search   a all/active/failed   r refresh   p pause   q quit\nLogs: ←/→ choose file   s split stdout/stderr   f full file / live tail\nPgUp/PgDn scroll   g top   G bottom   [/] previous/next full-file chunk\nQueue refreshes every 15s; active job metrics every 0.5s.\n`); process.exit(0);
 }
 if (args.includes('--once')) {
   try {console.log(JSON.stringify(await request(host, {op:'list', days, user}), null, 2));} catch(e) {console.error(e.message); process.exitCode = 1;}
@@ -62,6 +62,7 @@ function App() {
   const [actionMessage, setActionMessage] = useState(''); const [pendingAction, setPendingAction] = useState('');
   const [draft, setDraft] = useState(null); const [editInput, setEditInput] = useState(null);
   const [perfHistory, setPerfHistory] = useState([]);
+  const [now, setNow] = useState(new Date());
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const maxScroll=useRef(0);
   const partitions=['All',...new Set(data.jobs.map(j=>j.partition).filter(Boolean))]; const users=['My jobs',...new Set(data.jobs.map(j=>j.user).filter(Boolean))]; const statuses=['All','RUNNING','PENDING','COMPLETED','FAILED','CANCELLED']; const gpus=['All','GPU requested','CPU only'];
@@ -71,6 +72,7 @@ function App() {
   const selectedId = selected?.id;
   const jobRef = useRef(selected); jobRef.current = selected;
   useEffect(() => {const fn = () => setSize([stdout.columns || 100, stdout.rows || 30]); stdout.on('resize', fn); return () => stdout.off('resize', fn);}, [stdout]);
+  useEffect(() => {const t=setInterval(()=>setNow(new Date()),1000); return ()=>clearInterval(t);}, []);
   useEffect(() => {
     const c = new AbortController(); let busy = false;
     const load = async () => {if(busy) return; busy = true; setLoading(true); try {const d = await request(host,{op:'list',days,user},c.signal); if(!c.signal.aborted) {setData(d);setError('');setUpdated(new Date().toLocaleTimeString());}} catch(e) {if(!c.signal.aborted)setError(clean(e.message));} finally {busy=false; if(!c.signal.aborted)setLoading(false);}};
@@ -126,7 +128,7 @@ function App() {
       else {const list=queueView?queueJobs:jobs; const i=list.findIndex(j=>j.id===selectedId);setId(list[Math.max(0,Math.min(list.length-1,i+delta))]?.id||'');}
     }
   });
-  const color=j=>failed(j)?'red':j.state==='RUNNING'?'green':j.state==='PENDING'?'yellow':'gray';
+  const color=j=>failed(j)?'red':j.state==='PENDING'?'yellow':j.state==='RUNNING'||j.state==='COMPLETED'?'green':'gray';
   const sval=v=>String(v??'');
   let elementKey=0;
   const line=(s,props={})=>h(Text,{key:`auto-${elementKey++}`,...props},clean(s));
@@ -155,7 +157,7 @@ function App() {
     const spark=(key,maxValue)=>{const glyph='▁▂▃▄▅▆▇█';const vals=perfHistory.map(p=>p[key]||0);return vals.length?vals.map(v=>glyph[Math.min(7,Math.round((v/Math.max(1,maxValue))*7))]).join(''):'—';};
     const lines=[`${selected?selected.name:'Select a job'} · live accounting view`,'','CPU HISTORY  '+spark('cpu',Math.max(1,...perfHistory.map(p=>p.cpu||0))),`RSS HISTORY  ${spark('rss',Math.max(1,...perfHistory.map(p=>p.rss||0)))}`,'','RESOURCE PROFILE',...steps.map((s,i)=>`${s.id}  CPU ${s.cpu||'—'}  elapsed ${s.elapsed||'—'}  RSS ${s.rss||'—'}`),'','PEAK RSS'];
     if(rss.length) lines.push(...rss.map((v,i)=>`${steps[i].id.padEnd(12)} ${'█'.repeat(Math.max(1,Math.round(v/max*24)))} ${steps[i].rss||'—'}`)); else lines.push('No accounting samples are available yet.');
-    lines.push('','Refreshes every 5s while live. Filter jobs with /; tabs 1–5.');
+    lines.push('','Live samples update every 0.5s for running jobs. Use M for metrics.');
     right=pane('JOB PERFORMANCE · CPU / MEMORY',displayLines(lines.join('\n'),body-4));
   }else if(!selected){right=pane('JOBS',line(loading?'Connecting to Slurm…':'No jobs match. Press a to change filter or / to search.'));
   }else if(view===2){
@@ -175,7 +177,7 @@ function App() {
   const idx=Math.max(0,jobs.findIndex(j=>j.id===selectedId)); const start=Math.max(0,Math.min(idx-Math.floor((body-4)/2),jobs.length-(body-4)));
   if(width<72||height<18)return h(Box,{flexDirection:'column'},line('seejobs · enlarge terminal to at least 72 × 18',{color:'yellow'}),line('q quit'));
   return h(Box,{flexDirection:'column',height:height-1,width},
-    h(Box,{justifyContent:'space-between'},line(' ◉ seejobs',{bold:true,color:'cyan'}),line(`${host} · ${loading?'refreshing…':updated||'connecting…'} `,{dimColor:true})),
+    h(Box,{justifyContent:'space-between'},line(' ◉ seejobs',{bold:true,color:'cyan'}),line(`◷ ${now.toLocaleTimeString()} · ${loading?'refreshing…':updated||'connecting…'} `,{dimColor:true})),
     line(` ${data.jobs.filter(active).length} active   ${data.jobs.filter(failed).length} unsuccessful   ${data.jobs.length} jobs / ${days}d   ${data.nodes.filter(n=>/drain|down|fail/i.test(n.state)).length} unhealthy nodes`,{color:'white'}),
     h(Text,{key:'nav'},h(Text,{color:'yellow',bold:true},'O'),line('verview   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'L'),line('ogs   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'N'),line('odes   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'H'),line('istory   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'M'),line('etrics   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'S'),line(`queue  │ F:filters`,{color:'cyan'})),
     h(Box,{height:body},h(Box,{width:Math.min(36,Math.floor(width*.3)),flexShrink:0,flexDirection:'column',borderStyle:'round',borderColor:!focus?'cyan':'gray',paddingX:1},line(`JOBS ${!focus?'• focused':''}`,{bold:true,color:'cyan'}),...jobs.slice(start,start+body-4).map(j=>line(`${j.id===selectedId?'›':' '} ${j.id} ${j.state==='RUNNING'?'●':failed(j)?'×':j.state==='PENDING'?'◷':'✓'} ${j.name} ${j.partition||''} ${j.nodes||''} ${j.cpus||''} ${j.gres||''}`,{key:j.id,color:color(j),inverse:j.id===selectedId,wrap:'truncate'}))),right),
