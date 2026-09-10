@@ -106,7 +106,7 @@ function App() {
     else if(key.tab)setFocus(f=>!f);
     else if(input==='o'||input==='O'){setView(1);setQueueView(false);} else if(input==='l'||input==='L'){setView(2);setQueueView(false);} else if(input==='n'||input==='N'){setView(3);setQueueView(false);} else if(input==='h'||input==='H'){setView(4);setQueueView(false);} else if(input==='p'||input==='P'){setView(5);setQueueView(false);} else if(input==='S'){setQueueView(true);setView(1);setScroll(0);}
     else if(input==='F'){setFilterMode(m=>(m+1)%4);setActionMessage(`Filter: ${['partition','user','status','GPU use'][filterMode]}. Use [ and ] to change.`);}
-    else if(input===']'||input==='[' ){const dir=input===']'?1:-1; if(filterMode===0)setPartition(partitions[Math.max(0,(partitions.indexOf(partition)+dir)%partitions.length)]); else if(filterMode===1)setUserFilter(users[Math.max(0,(users.indexOf(userFilter)+dir)%users.length)]); else if(filterMode===2)setStatusFilter(statuses[Math.max(0,(statuses.indexOf(statusFilter)+dir)%statuses.length)]); else setGpuFilter(gpus[Math.max(0,(gpus.indexOf(gpuFilter)+dir)%gpus.length)]);}
+    else if(input===']'||input==='[' ){const dir=input===']'?1:-1; const next=(a,v)=>a[(Math.max(0,a.indexOf(v))+dir+a.length)%a.length]; if(filterMode===0)setPartition(next(partitions,partition)); else if(filterMode===1)setUserFilter(next(users,userFilter)); else if(filterMode===2)setStatusFilter(next(statuses,statusFilter)); else setGpuFilter(next(gpus,gpuFilter));}
     else if(input==='s'){setSplit(s=>!s);setView(2);}
     else if(input==='f'){setFull(f=>!f);setOffset(0);setScroll(0);setView(2);setFocus(true);}
     else if(key.leftArrow||key.rightArrow){setLogIndex(i=>Math.max(0,Math.min(logs.length-1,i+(key.rightArrow?1:-1))));setOffset(0);setScroll(0);}
