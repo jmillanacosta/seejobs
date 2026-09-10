@@ -3,6 +3,7 @@ import React, {useState, useEffect, useRef} from 'react';
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
+import {basename} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import {render, Box, Text, useInput, useApp, useStdout} from 'ink';
 import wrapAnsi from 'wrap-ansi';
@@ -61,9 +62,11 @@ function App() {
   const [actionMessage, setActionMessage] = useState(''); const [pendingAction, setPendingAction] = useState('');
   const [draft, setDraft] = useState(null); const [editInput, setEditInput] = useState(null);
   const [perfHistory, setPerfHistory] = useState([]);
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
   const maxScroll=useRef(0);
   const partitions=['All',...new Set(data.jobs.map(j=>j.partition).filter(Boolean))]; const users=['My jobs',...new Set(data.jobs.map(j=>j.user).filter(Boolean))]; const statuses=['All','RUNNING','PENDING','COMPLETED','FAILED','CANCELLED']; const gpus=['All','GPU requested','CPU only'];
   const jobs = data.jobs.filter(j => (!filter || (filter === 1 ? active(j) : failed(j))) && (partition==='All'||j.partition===partition) && (userFilter==='My jobs'||j.user===userFilter) && (statusFilter==='All'||j.state.includes(statusFilter)) && (gpuFilter==='All'||(gpuFilter==='GPU requested'?/gpu/i.test(j.gres||''):! /gpu/i.test(j.gres||''))) && `${j.id} ${j.name} ${j.user||''} ${j.state} ${j.partition||''} ${j.nodes||''} ${j.cpus||''} ${j.gres||''}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => Number(active(b))-Number(active(a)) || Number(b.id.split('_')[0])-Number(a.id.split('_')[0]) || b.id.localeCompare(a.id));
+  const queueJobs = jobs.filter(j=>active(j)||j.state.includes('PENDING'));
   const selected = jobs.find(j => j.id === id) || jobs[0];
   const selectedId = selected?.id;
   const jobRef = useRef(selected); jobRef.current = selected;
@@ -79,7 +82,7 @@ function App() {
     if(!selectedId) return;
     const c = new AbortController(); let busy = false;
     const load = async () => {if(busy) return; busy=true; try {const d=await request(host,{op:'detail',job:jobRef.current},c.signal);if(!c.signal.aborted){setDetail(d);setDetailError(''); const rss=(d.steps||[]).reduce((n,s)=>Math.max(n,Number.parseInt(s.rss)||0),0); const cpu=(d.steps||[]).reduce((n,s)=>n+Number.parseFloat(s.cpu)||n,0); setPerfHistory(h=>[...h,{rss,cpu}].slice(-48));}}catch(e){if(!c.signal.aborted)setDetailError(clean(e.message));}finally{busy=false;}};
-    load(); const timer=setInterval(load,5000); return()=>{clearInterval(timer);c.abort();};
+    load(); const timer=setInterval(load,active(jobRef.current)?500:5000); return()=>{clearInterval(timer);c.abort();};
   }, [selectedId,tick]);
   const logs = detail?.logs || []; const log = logs[logIndex] || logs[0];
   useEffect(() => {
@@ -116,10 +119,11 @@ function App() {
     else if(input==='g')setScroll(0);
     else if(input==='G'||key.end)setScroll(1000000);
     else if(key.home)setScroll(0);
+    else if(input==='g'&&queueView&&selected){const group=basename(selected.script||'unknown script');setCollapsedGroups(s=>{const n=new Set(s);n.has(group)?n.delete(group):n.add(group);return n;});}
     else if(key.upArrow||key.downArrow||input==='j'||input==='k'){
       const delta=key.downArrow||input==='j'?1:-1;
       if(focus)setScroll(s=>Math.max(0,Math.min(maxScroll.current,Math.min(s,maxScroll.current)+delta)));
-      else {const i=jobs.findIndex(j=>j.id===selectedId);setId(jobs[Math.max(0,Math.min(jobs.length-1,i+delta))]?.id||'');}
+      else {const list=queueView?queueJobs:jobs; const i=list.findIndex(j=>j.id===selectedId);setId(list[Math.max(0,Math.min(list.length-1,i+delta))]?.id||'');}
     }
   });
   const color=j=>failed(j)?'red':j.state==='RUNNING'?'green':j.state==='PENDING'?'yellow':'gray';
@@ -129,14 +133,14 @@ function App() {
   maxScroll.current=0;
   const displayLines=(text,available=pageHeight,columns=width-Math.min(36,Math.floor(width*.3))-4)=>{
     const lines=wrapAnsi(clean(text).replaceAll('\t','    '),Math.max(8,columns),{hard:true,trim:false}).split('\n'); const start=Math.min(scroll,Math.max(0,lines.length-available)); maxScroll.current=Math.max(maxScroll.current,lines.length-available);
-    return [line(`${start+1}–${Math.min(lines.length,start+available)} / ${lines.length} lines`,{dimColor:true}),...lines.slice(start,start+available).map((l,i)=>line(l||' ',{key:i,wrap:'truncate',color:/error|exception|failed|traceback/i.test(l)?'red':undefined}))];
+    return [line(`${start+1}–${Math.min(lines.length,start+available)} / ${lines.length} lines`,{dimColor:true}),...lines.slice(start,start+available).map((l,i)=>line(l||' ',{key:i,wrap:'truncate',color:/error|exception|failed|traceback/i.test(l)?'red':/^CPU|CPU HISTORY/.test(l)?'cyan':/^RSS|RSS HISTORY/.test(l)?'yellow':/█/.test(l)?'green':undefined}))];
   };
   let right;
   if(filterPanel){
     const rows=[['Partition',partition],['User scope',userFilter],['Status',statusFilter],['GPU use',gpuFilter]];
     const fl=rows.map(([k,v],i)=>`${i===filterMode?'›':' '} ${k.padEnd(14)} ${v}`); right=pane('FILTERS · ↑↓ FIELD · ←→ VALUE',displayLines([...fl,'','Enter/Esc close · k search · S queue'].join('\n'),body-4));
   }else if(queueView){
-    const qlines=['JOB ID       USER                 STATE       TIME       PARTITION  NODE(S)     CPU  GRES',...jobs.filter(j=>active(j)||j.state.includes('PENDING')).map(j=>`${j.id.padEnd(12)} ${(j.user||user).padEnd(20)} ${j.state.padEnd(11)} ${(j.elapsed||'—').padEnd(10)} ${(j.partition||'—').padEnd(10)} ${(j.nodes||'—').padEnd(11)} ${(j.cpus||'—').padEnd(4)} ${j.gres||'—'}`),'','F filters  [ ] change filter value  / search  Enter opens selected job'];
+    const qjobs=jobs.filter(j=>active(j)||j.state.includes('PENDING')); const groups={}; qjobs.forEach(j=>{const g=basename(j.script||'unknown script');(groups[g]??=[]).push(j);}); const qlines=['JOB ID       USER                 STATE       TIME       PARTITION  NODE(S)     CPU  GRES / SCRIPT']; Object.entries(groups).forEach(([g,items])=>{qlines.push(`${collapsedGroups.has(g)?'▸':'▾'} ${g} (${items.length})`);if(!collapsedGroups.has(g))items.forEach(j=>qlines.push(`${j.id.padEnd(12)} ${(j.user||user).padEnd(20)} ${j.state.padEnd(11)} ${(j.elapsed||'—').padEnd(10)} ${(j.partition||'—').padEnd(10)} ${(j.nodes||'—').padEnd(11)} ${(j.cpus||'—').padEnd(4)} ${j.gres||'—'}`));}); qlines.push('','↑↓ navigate queue  Enter opens  c cancel  g fold script group  f filters');
     right=pane('SQUEUE · LIVE QUEUE',displayLines(qlines.join('\n'),body-4));
   }else if(view===3){
     const lines=data.nodes.flatMap(n=>[`${n.name}  ${n.state.toUpperCase()}`,`CPUs allocated/idle/other/total: ${n.cpus}`,`RAM ${(Number(n.memory)/1024).toFixed(0)} GiB  •  ${n.reason}`, '']);
