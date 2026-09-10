@@ -11,3 +11,8 @@ test('scheduler failures are distinguished from log evidence',()=>{
   assert.equal(active({state:'PENDING'}),true);
   assert.equal(failed({state:'CANCELLED by 123'}),true);
 });
+test('a completed batch script does not hide failed steps',()=>{
+  const result=diagnosis({id:'42',state:'COMPLETED'},{steps:[{id:'42',derivedExit:'1:0'},{id:'42.0',state:'FAILED',exit:'1:0'}],logs:[]});
+  assert.match(result[0],/step 42.0.*failure/);
+  assert.doesNotMatch(result[0],/Completed successfully/);
+});

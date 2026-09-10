@@ -16,7 +16,7 @@ class RemoteTests(unittest.TestCase):
         def fake(args,optional=False):
             calls.append(args)
             if args[0]=='squeue' and '--json' in args:return '{"errors":[{"error":"unavailable"}]}'
-            if args[0]=='squeue':return '9|train|bob|PENDING|00:00|01:00|gpu||1G|2|gpu:1|||/work/train.sh|Resources'
+            if args[0]=='squeue':return '9|train|bob|PENDING|00:00|01:00|gpu||1G|2|gpu:1|||/work/train.sh|Resources|2026-01-01T12:00:00|account|normal|1||1'
             return ''
         with patch.object(m,'run',side_effect=fake):
             result=m.snapshot(7,'')

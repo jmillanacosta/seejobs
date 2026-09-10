@@ -8,6 +8,11 @@ const all=await request(host,{op:'list',days:7,user:''});
 assert(all.jobs.length>=mine.jobs.length);
 assert(all.jobs.every(j=>typeof j.state==='string'&&!j.state.startsWith('[')&&!j.cpus?.startsWith('{')));
 const caps=await request(host,{op:'capabilities'});assert(caps.partitions.length>0);
+assert(mine.jobs.every(j=>typeof j.submitted==='string'));
+const resources=await request(host,{op:'resources',user});assert(Array.isArray(resources.shares));assert(Array.isArray(resources.reservations));
+const pending=all.jobs.find(j=>j.state==='PENDING');
+if(pending){const schedule=await request(host,{op:'scheduling',job:pending});assert(Array.isArray(schedule.estimate));assert(Array.isArray(schedule.priority));}
+console.log(JSON.stringify({accountAssociations:caps.accounts.length,qosLevels:caps.qos.length,fairShareRows:resources.shares.length,reservations:resources.reservations.length}));
 const own=mine.jobs.filter(j=>j.script).sort((a,b)=>Number(b.id)-Number(a.id))[0];
 if(own){
   const d=await request(host,{op:'detail',job:own});assert(Array.isArray(d.logs));

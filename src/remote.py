@@ -2,7 +2,12 @@ import sys, json, subprocess, os, re, stat, time, shlex, getpass, datetime
 
 
 def run(args, optional=False):
-    p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=18)
+    try:
+        p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=12)
+    except (OSError, subprocess.TimeoutExpired):
+        if optional:
+            return ''
+        raise
     if p.returncode and not optional:
         raise RuntimeError(p.stderr.strip() or 'Command failed: ' + args[0])
     return p.stdout if p.returncode == 0 else ''
@@ -44,6 +49,10 @@ def duration(value):
         return str(value)
 
 
+def timestamp(value):
+    return datetime.datetime.fromtimestamp(value).astimezone().isoformat() if isinstance(value, (int, float)) and value > 0 else ''
+
+
 def queue_job(q):
     value = lambda k, default='': scalar(q.get(k), default)
     jid = str(value('job_id'))
@@ -69,7 +78,9 @@ def queue_job(q):
                 gres=gpu, tres=tres, reason=str(value('state_reason')),
                 workdir=str(value('current_working_directory') or value('work_dir')),
                 script=str(value('command')), stdout=str(value('standard_output')), stderr=str(value('standard_error')),
-                start=datetime.datetime.fromtimestamp(start).isoformat() if isinstance(start, (int, float)) and start else '',
+                start=timestamp(start), submitted=timestamp(value('submit_time')), eligible=timestamp(value('eligible_time')),
+                account=str(value('account')), qos=str(value('qos')), priority=str(value('priority')),
+                dependency=str(value('dependency')), nodeCount=str(value('node_count')),
                 source='queue')
 
 
@@ -80,10 +91,10 @@ def snapshot(days, user):
         raise ValueError('Invalid username')
     warnings, jobs = [], {}
     scope = ['-u', user] if user else ['--allusers']
-    keys = ['id', 'name', 'user', 'state', 'exit', 'elapsed', 'partition', 'nodes', 'memory', 'cpus', 'start', 'end', 'workdir', 'reason', 'tres', 'submit']
+    keys = ['id', 'name', 'user', 'state', 'exit', 'elapsed', 'partition', 'nodes', 'memory', 'cpus', 'start', 'end', 'workdir', 'reason', 'tres', 'submitted', 'eligible', 'limit', 'account', 'qos', 'nodeCount', 'submit']
     try:
         history = run(['sacct'] + scope + ['-S', 'now-%ddays' % days, '-X', '-n', '-P',
-            '--format=JobID%80,JobName%100,User%100,State%40,ExitCode,Elapsed,Partition,NodeList,ReqMem,AllocCPUS,Start,End,WorkDir%1000,Reason%200,ReqTRES%500,SubmitLine%3000'])
+            '--format=JobID%80,JobName%100,User%100,State%40,ExitCode,Elapsed,Partition,NodeList,ReqMem,AllocCPUS,Start,End,WorkDir%1000,Reason%200,ReqTRES%500,Submit,Eligible,Timelimit,Account,QOS,NNodes,SubmitLine%3000'])
         records = rows(history, keys)
         if len(records) > 5000:
             warnings.append('Showing the latest 5000 accounting jobs; narrow the user or history window.')
@@ -104,8 +115,8 @@ def snapshot(days, user):
                 raise ValueError('JSON queue unavailable')
             current = [queue_job(q) for q in parsed['jobs']]
         except (ValueError, TypeError, KeyError):
-            current = rows(run(['squeue', '-r', '-h'] + queue_args + ['-o', '%i|%j|%u|%T|%M|%l|%P|%N|%m|%C|%b|%S|%Z|%o|%r']),
-                           ['id', 'name', 'user', 'state', 'elapsed', 'limit', 'partition', 'nodes', 'memory', 'cpus', 'gres', 'start', 'workdir', 'script', 'reason'])
+            current = rows(run(['squeue', '-r', '-h'] + queue_args + ['-o', '%i|%j|%u|%T|%M|%l|%P|%N|%m|%C|%b|%S|%Z|%o|%r|%V|%a|%q|%Q|%E|%D']),
+                           ['id', 'name', 'user', 'state', 'elapsed', 'limit', 'partition', 'nodes', 'memory', 'cpus', 'gres', 'start', 'workdir', 'script', 'reason', 'submitted', 'account', 'qos', 'priority', 'dependency', 'nodeCount'])
         for j in current:
             jobs[j['id']] = dict(jobs.get(j['id'], {}), **j)
     except Exception as e:
@@ -177,7 +188,8 @@ def detail(job):
     if not re.fullmatch(r'[0-9]+(?:_[0-9]+)?(?:\+[0-9]+)?', jid):
         raise ValueError('Unsupported job ID')
     meta = fields(run(['scontrol', 'show', 'job', '-o', jid], optional=True).strip())
-    steps = rows(run(['sacct', '-j', jid, '-n', '-P', '--format=JobID,State,ExitCode,MaxRSS,Elapsed,TotalCPU'], optional=True), ['id', 'state', 'exit', 'rss', 'elapsed', 'cpu'])
+    steps = rows(run(['sacct', '-j', jid, '-n', '-P', '--format=JobID%80,State%40,ExitCode,MaxRSS,Elapsed,TotalCPU,AllocCPUS,NTasks,MaxRSSNode,MaxRSSTask,AveDiskRead,AveDiskWrite,DerivedExitCode'], optional=True),
+                 ['id', 'state', 'exit', 'rss', 'elapsed', 'cpu', 'cpus', 'tasks', 'peakNode', 'peakTask', 'read', 'write', 'derivedExit'])
     logs = []
     seen = set()
     for key in ['StdErr', 'StdOut']:
@@ -307,16 +319,18 @@ def capabilities():
     warnings = []
     partitions = [fields(l) for l in run(['scontrol', 'show', 'partition', '-o'], optional=True).splitlines()]
     nodes = [fields(l) for l in run(['scontrol', 'show', 'node', '-o'], optional=True).splitlines()]
-    qos = run(['sacctmgr', '-n', '-P', 'show', 'qos', 'format=Name,MaxWall,MaxTRESPU'], optional=True)
-    accounts = run(['sacctmgr', '-n', '-P', 'show', 'assoc', 'where', 'user=' + getpass.getuser(), 'format=Account,Partition,QOS'], optional=True)
+    qos = run(['sacctmgr', '-n', '-P', 'show', 'qos', 'format=Name,MaxWall,MaxTRESPU,MaxJobsPU,MaxSubmitPU'], optional=True)
+    accounts = run(['sacctmgr', '-n', '-P', 'show', 'assoc', 'where', 'user=' + getpass.getuser(), 'format=Account,Partition,QOS,DefaultQOS,MaxJobs,MaxSubmit,GrpTRES'], optional=True)
     # Config uses padded "key = value"; extract only the settings needed by the UI.
     raw = run(['scontrol', 'show', 'config'], optional=True)
     frequency = re.search(r'JobAcctGatherFrequency\s*=\s*(\d+)', raw)
+    config = dict(re.findall(r'^\s*(\w+)\s*=\s*(.*?)\s*$', raw, re.M))
     if not accounts:
         warnings.append('Account restrictions unavailable; scheduler validation remains authoritative.')
     return {'partitions': partitions, 'nodes': nodes,
-            'qos': rows(qos, ['name', 'maxWall', 'maxTres']),
-            'accounts': rows(accounts, ['account', 'partition', 'qos']),
+            'qos': rows(qos, ['name', 'maxWall', 'maxTres', 'maxJobs', 'maxSubmit']),
+            'accounts': rows(accounts, ['account', 'partition', 'qos', 'defaultQos', 'maxJobs', 'maxSubmit', 'groupTres']),
+            'config': {k: config.get(k, '') for k in ['MaxArraySize', 'DefMemPerCPU', 'MaxMemPerCPU', 'PriorityType', 'SchedulerType', 'AccountingStorageTRES', 'JobAcctGatherType']},
             'sampleSeconds': int(frequency.group(1)) if frequency else None, 'warnings': warnings}
 
 
@@ -325,8 +339,27 @@ def metrics(job):
     if not re.fullmatch(r'[0-9]+(?:_[0-9]+)?(?:\+[0-9]+)?', jid):
         raise ValueError('Select an individual job for metrics')
     output = run(['sstat', '-a', '-j', jid, '-n', '-P',
-                  '--format=JobID,NTasks,AveCPU,AveRSS,MaxRSS,TRESUsageInAve'])
-    return {'time': time.time(), 'steps': rows(output, ['id', 'tasks', 'cpu', 'rss', 'peak', 'tres'])}
+                  '--format=JobID%80,NTasks,AveCPU,AveRSS,MaxRSS,TRESUsageInAve,AveDiskRead,AveDiskWrite'])
+    return {'time': time.time(), 'steps': rows(output, ['id', 'tasks', 'cpu', 'rss', 'peak', 'tres', 'read', 'write'])}
+
+
+def scheduling(job):
+    jid = job['id']
+    if not re.fullmatch(r'[0-9]+(?:_[0-9]+)?', jid):
+        raise ValueError('Choose one job to inspect scheduling.')
+    return {'priority': rows(run(['sprio', '-j', jid, '-h', '-o', '%i|%Y|%A|%F|%Q|%P|%T'], optional=True),
+                             ['id', 'total', 'age', 'fairshare', 'qos', 'partition', 'tres']),
+            'estimate': rows(run(['squeue', '--start', '-j', jid, '-h', '-o', '%i|%S|%Y|%r'], optional=True),
+                             ['id', 'start', 'nodes', 'reason']), 'time': time.time()}
+
+
+def resources(user):
+    if not re.fullmatch(r'[\w.@-]+', user):
+        raise ValueError('Choose one username for account information.')
+    share = run(['sshare', '-n', '-P', '-u', user, '-o', 'Account,User,RawShares,NormShares,RawUsage,EffectvUsage,FairShare'], optional=True)
+    return {'shares': rows(share, ['account', 'user', 'shares', 'normalized', 'usage', 'effective', 'fairshare']),
+            'reservations': [fields(l) for l in run(['scontrol', 'show', 'reservation', '-o'], optional=True).splitlines() if 'ReservationName=' in l],
+            'time': time.time(), 'warning': '' if share else 'Fair-share information is unavailable on this cluster or for this user.'}
 
 
 def action(request):
@@ -345,7 +378,8 @@ def action(request):
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25)
         if p.returncode:
             raise RuntimeError(p.stderr.strip() or 'sbatch rejected the script')
-        return {'result': (p.stdout + p.stderr).strip() or 'Scheduler validation passed'}
+        result = (p.stdout + p.stderr).strip() or 'Scheduler validation passed'
+        return {'result': result, 'jobId': p.stdout.strip().split(';')[0] if request['op'] == 'submit' else None}
     job = request['job']; jid = job['id']
     if not re.fullmatch(r'[0-9]+(?:_[0-9]+)?', jid):
         raise ValueError('Unsupported job ID')
@@ -367,8 +401,14 @@ if __name__ == '__main__':
             result = capabilities()
         elif request['op'] == 'open':
             result = read_script(request['path'])
+        elif request['op'] == 'new':
+            result = {'workdir': os.path.expanduser('~'), 'source': 'New job', 'script': '#!/bin/bash\n#SBATCH --job-name=new-job\n#SBATCH --time=00:10:00\n#SBATCH --cpus-per-task=1\n#SBATCH --mem=1G\n#SBATCH --output=%x-%j.out\n#SBATCH --error=%x-%j.err\n', 'isNew': True, 'command': ''}
         elif request['op'] == 'metrics':
             result = metrics(request['job'])
+        elif request['op'] == 'scheduling':
+            result = scheduling(request['job'])
+        elif request['op'] == 'resources':
+            result = resources(request['user'])
         elif request['op'] in ('cancel', 'script', 'submit', 'validate'):
             result = action(request)
         elif request['op'] == 'log':

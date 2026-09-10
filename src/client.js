@@ -42,5 +42,8 @@ export function diagnosis(job, detail) {
   const candidates = lines.filter(l => /error|exception|out of memory|killed|failed|not found|permission denied|no space/i.test(l) && !/\bFile "|\breturn await\b|\braise error\b|^\s*[|+]?\s*raise\b/.test(l));
   const evidence = candidates.slice(-3).reverse();
   const exact = known.find(([re]) => re.test(state));
-  return [exact?.[1] || (failed(job) ? `Exited ${job.exit || detail?.meta?.ExitCode || 'with failure'}. Log clues below may explain why.` : state === 'COMPLETED' ? 'Completed successfully.' : 'Job is active; logs refresh automatically.'), ...evidence.map(l => 'Log clue: ' + l.trim())];
+  const badStep=(detail?.steps||[]).find(s=>s.id!==job.id&&!s.id.endsWith('.extern')&&(failed(s)||/^[1-9]\d*:\d+$|^0:[1-9]\d*$/.test(s.exit||'')));
+  const derived=(detail?.steps||[]).find(s=>s.id===job.id)?.derivedExit;
+  const hiddenFailure=state==='COMPLETED'&&(badStep||/^[1-9]\d*:\d+$|^0:[1-9]\d*$/.test(derived||''));
+  return [hiddenFailure?`The batch script completed, but ${badStep?'step '+badStep.id:'the derived exit code'} reports a failure. Check step results and logs before accepting the output.`:exact?.[1] || (failed(job) ? `Exited ${job.exit || detail?.meta?.ExitCode || 'with failure'}. Log clues below may explain why.` : state === 'COMPLETED' ? 'Completed successfully.' : 'Job is active; logs refresh automatically.'), ...evidence.map(l => 'Log clue: ' + l.trim())];
 }

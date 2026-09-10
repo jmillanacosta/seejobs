@@ -2,7 +2,8 @@
 import React from 'react';
 import {render} from 'ink';
 import {request} from './client.js';
-import {loadConfig, configure} from './config.js';
+import {loadConfig, configure,saveConfig} from './config.js';
+import {importGuides} from './guides.js';
 import {App} from './ui.js';
 import {TerminalInput} from './terminal.js';
 
@@ -13,11 +14,13 @@ seejobs                 open the queue; setup runs on first use
 seejobs --config        edit private connection settings
 seejobs --host local    run directly on a Slurm login node
 seejobs --once          JSON snapshot
+seejobs --import-guides /path/to/guides   import private Markdown advice
 Options: --host ALIAS  --user USER  --days 1..365
 
-s Slurm   o Overview   l Logs   n Nodes   h History   m Metrics
-f Filters   k Search   / split logs   b open batch file   e edit/rerun
-c Cancel selected job   r Refresh   ? Help   q Quit
+s Slurm   d Dashboard   h History   n Nodes   , Settings   ? Help
+Job views: o Overview   l Logs   m Metrics
+f Filters   k Search   / split logs   b open/new job   e edit/rerun
+c Cancel selected job   r Reload   Esc Slurm   q Quit
 Arrows / PageUp / PageDown / Home / End navigate the focused panel.
 Tab or click focuses a panel; click a queue row to open its overview.
 No pause binding. Uppercase panel letters work too.
@@ -27,8 +30,9 @@ try {
   let config=loadConfig();
   if(args.includes('--config')){await configure();process.exit(0);}
   const option=(name,fallback)=>{const i=args.indexOf(name);if(i<0)return fallback;if(!args[i+1]||args[i+1].startsWith('--'))throw new Error('Missing value for '+name);return args[i+1];};
-  const known=new Set(['--config','--once','--host','--user','--days','--no-mouse']);
-  for(let i=0;i<args.length;i++){if(!known.has(args[i]))throw new Error('Unknown option: '+args[i]);if(['--host','--user','--days'].includes(args[i]))i++;}
+  const known=new Set(['--config','--once','--host','--user','--days','--no-mouse','--import-guides']);
+  for(let i=0;i<args.length;i++){if(!known.has(args[i]))throw new Error('Unknown option: '+args[i]);if(['--host','--user','--days','--import-guides'].includes(args[i]))i++;}
+  if(args.includes('--import-guides')){config.guidance=importGuides(option('--import-guides'));saveConfig(config);console.log('Imported private advice from '+config.guidance.filesRead+' Markdown files.');process.exit(0);}
   if((!config.sshHost||!config.remoteUser)&&!args.includes('--host')&&!process.env.SEEJOBS_HOST)config=await configure();
   const host=option('--host',process.env.SEEJOBS_HOST||config.sshHost);
   const user=option('--user',process.env.SEEJOBS_USER||config.remoteUser);
@@ -41,7 +45,7 @@ try {
     const restore=()=>process.stdout.write('\x1b[?1000l\x1b[?1006l\x1b[?25h');
     process.once('exit',restore);
     const input=new TerminalInput(process.stdin);
-    const app=render(React.createElement(App,{host,user,days,mouse,input}),{stdin:input,alternateScreen:true,exitOnCtrlC:true,maxFps:20});
+    const app=render(React.createElement(App,{host,user,days,config,mouse,input}),{stdin:input,alternateScreen:true,exitOnCtrlC:true,maxFps:20});
     await app.waitUntilExit();input.close();
   }
 }catch(e){console.error('seejobs: '+e.message);process.exitCode=1;}

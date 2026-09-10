@@ -28,7 +28,7 @@ test('queue, filters, script editor, preview and confirmations work in Ink',asyn
     assert.ok(calls.some(p=>p.op==='list'&&p.user===''));
     await key('\x1b[F');await key('\r');
     assert.ok(calls.some(p=>p.op==='detail'&&p.job.id==='19'));
-    await key('s');await key('\x1b[H');await key('e');await delay(150);assert.ok(screen.includes('BATCH EDITOR'),JSON.stringify(calls)+'\n'+screen.slice(-4000));
+    await key('s');await key('\x1b[H');await key('\x1b[B');await key('e');await delay(150);assert.ok(screen.includes('BATCH EDITOR'),JSON.stringify(calls)+'\n'+screen.slice(-4000));
     // Submission directory, job name, partition, account, QoS, then time.
     for(let i=0;i<5;i++)await key('\x1b[B');
     await key('\r');await key('\x15');await key('02:00:00');await key('\r');
@@ -39,7 +39,7 @@ test('queue, filters, script editor, preview and confirmations work in Ink',asyn
     await key('s');await key('c');await key('\x1b[B');await key('y');
     assert.equal(calls.find(p=>p.op==='cancel').job.id,'20');
     // Mouse queue row opens overview.
-    await key('s');await key('\x1b[<0;5;9M');assert.match(screen,/OVERVIEW/);
+    await key('s');await key('\x1b[<0;5;10M');assert.match(screen,/OVERVIEW/);
     assert.doesNotMatch(screen,/TypeError|same key|unique.*key|Cannot update/);
   }finally{app.unmount();input.close();}
 });
