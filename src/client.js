@@ -4,22 +4,25 @@ const script = readFileSync(new URL('./remote.py', import.meta.url), 'utf8');
 const quote = s => "'" + s.replaceAll("'", "'\\''") + "'";
 export function request(host, payload, signal) {
   return new Promise((resolve, reject) => {
-    const child = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=2', host, `python3 - ${quote(JSON.stringify(payload))}`], {signal});
+    const child = host === 'local'
+      ? spawn('python3', ['-c', script], {signal})
+      : spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=2', host, 'python3 -c '+quote(script)], {signal});
     let out = '', err = '';
     const timer = setTimeout(() => child.kill(), 45000);
-    child.stdout.on('data', b => {out += b; if (out.length > 2000000) child.kill();});
+    child.stdout.on('data', b => {out += b; if (out.length > 16000000) {err='Response exceeds 16 MB; narrow the user or history window.';child.kill();}});
     child.stderr.on('data', b => {err += b;});
-    child.on('error', reject);
+    child.on('error', e => {clearTimeout(timer); reject(e);});
     child.on('close', code => {
       clearTimeout(timer);
       try {
         const data = JSON.parse(out);
         if (data.error) throw new Error(data.error);
+        if (code !== 0) throw new Error('Remote request failed');
         resolve(data);
       } catch (e) {reject(new Error(err.trim() || (out ? e.message : `SSH exited ${code}. Check your SSH connection to ${host}.`)));}
     });
     child.stdin.on('error', () => {});
-    child.stdin.end(script);
+    child.stdin.end(JSON.stringify(payload));
   });
 }
 export const clean = s => String(s ?? '').replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '');
