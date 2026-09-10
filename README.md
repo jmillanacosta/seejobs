@@ -2,6 +2,8 @@
 
 A keyboard-and-mouse Slurm dashboard for finding jobs, reading logs, understanding failures, and preparing submissions.
 
+Warning: vibecoded for my own use, I don't have a plan to maintain it.
+
 ## Install
 
 Requires Node.js 22 or later on the machine displaying the dashboard. Python 3 and Slurm commands must be available on the login node.
