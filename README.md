@@ -9,7 +9,7 @@ seejobs --host cluster.example
 seejobs --once
 ```
 
-Requires Node 22+, SSH authentication, and Python 3 plus Slurm commands on the server. The supplied local launcher selects an installed compatible Node. `cluster seejobs` uses the existing VPN login workflow. Nothing is installed on the cluster, and no jobs are submitted or changed.
+Requires Node 22+, SSH authentication, and Python 3 plus Slurm commands on the server. The supplied local launcher selects an installed compatible Node. `cluster seejobs` is a local convenience wrapper that launches seejobs against the configured SSH host. Nothing is installed on the cluster, and no jobs are submitted or changed.
 
 - **1 Overview**: state, resources, scheduler reason, error excerpts, measured peak RSS and total CPU time per job step.
 - **2 Logs**: stderr and stdout side by side. Tail refreshes every five seconds. `s` toggles split/single; arrows select a file in single/full mode.
