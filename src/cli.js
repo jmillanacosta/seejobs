@@ -127,6 +127,7 @@ function App() {
     }
   });
   const color=j=>failed(j)?'red':j.state==='RUNNING'?'green':j.state==='PENDING'?'yellow':'gray';
+  const sval=v=>String(v??'');
   let elementKey=0;
   const line=(s,props={})=>h(Text,{key:`auto-${elementKey++}`,...props},clean(s));
   const pane=(title,content,w)=>h(Box,{key:`auto-${elementKey++}`,flexDirection:'column',borderStyle:'round',borderColor:focus?'cyan':'gray',width:w,minWidth:0,flexGrow:w?0:1,flexShrink:1,paddingX:1,overflow:'hidden'},line(title,{bold:true,color:'cyan',wrap:'truncate'}),content);
@@ -140,7 +141,7 @@ function App() {
     const rows=[['Partition',partition],['User scope',userFilter],['Status',statusFilter],['GPU use',gpuFilter]];
     const fl=rows.map(([k,v],i)=>`${i===filterMode?'›':' '} ${k.padEnd(14)} ${v}`); right=pane('FILTERS · ↑↓ FIELD · ←→ VALUE',displayLines([...fl,'','Enter/Esc close · k search · S queue'].join('\n'),body-4));
   }else if(queueView){
-    const shown=queueJobs.slice(Math.max(0,queueJobs.findIndex(j=>j.id===selectedId)-Math.floor((body-8)/2)),Math.max(0,queueJobs.findIndex(j=>j.id===selectedId)-Math.floor((body-8)/2))+body-8); const rows=[h(Text,{key:'qh',color:'cyan',bold:true},'JOB ID       USER                 STATE       TIME       PARTITION  NODE(S)     CPU  GRES / SCRIPT'),...shown.map(j=>h(Text,{key:`qr-${j.id}`,color:color(j),inverse:j.id===selectedId,wrap:'truncate'},`${j.id===selectedId?'›':' '} ${j.id.padEnd(11)} ${(j.user||user).padEnd(20)} ${j.state.padEnd(11)} ${(j.elapsed||'—').padEnd(10)} ${(j.partition||'—').padEnd(10)} ${(j.nodes||'—').padEnd(11)} ${(j.cpus||'—').padEnd(4)} ${j.gres||basename(j.script||'—')}`)),line('','dimColor'),line('↑↓ navigate rows  Enter opens  c cancel  g fold script group  f filters',{dimColor:true})];
+    const shown=queueJobs.slice(Math.max(0,queueJobs.findIndex(j=>j.id===selectedId)-Math.floor((body-8)/2)),Math.max(0,queueJobs.findIndex(j=>j.id===selectedId)-Math.floor((body-8)/2))+body-8); const rows=[h(Text,{key:'qh',color:'cyan',bold:true},'JOB ID       USER                 STATE       TIME       PARTITION  NODE(S)     CPU  GRES / SCRIPT'),...shown.map(j=>h(Text,{key:`qr-${sval(j.id)}`,color:color(j),inverse:j.id===selectedId,wrap:'truncate'},`${j.id===selectedId?'›':' '} ${sval(j.id).padEnd(11)} ${sval(j.user||user).padEnd(20)} ${sval(j.state).padEnd(11)} ${sval(j.elapsed||'—').padEnd(10)} ${sval(j.partition||'—').padEnd(10)} ${sval(j.nodes||'—').padEnd(11)} ${sval(j.cpus||'—').padEnd(4)} ${sval(j.gres||basename(sval(j.script)||'—'))}`)),line('','dimColor'),line('↑↓ navigate rows  Enter opens  c cancel  g fold script group  f filters',{dimColor:true})];
     right=pane('SQUEUE · LIVE + ACCOUNTING HISTORY',h(Box,{flexDirection:'column'},...rows));
   }else if(view===3){
     const lines=data.nodes.flatMap(n=>[`${n.name}  ${n.state.toUpperCase()}`,`CPUs allocated/idle/other/total: ${n.cpus}`,`RAM ${(Number(n.memory)/1024).toFixed(0)} GiB  •  ${n.reason}`, '']);

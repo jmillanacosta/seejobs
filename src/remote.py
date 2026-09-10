@@ -28,7 +28,10 @@ def snapshot(days, user):
     queue_json = run(['squeue', '-u', user, '--json'], optional=True)
     try:
         for q in json.loads(queue_json).get('jobs', []):
-            j = {'id': str(q.get('job_id', '')), 'name': q.get('name', ''), 'user': q.get('user_name', user), 'state': q.get('job_state', ''), 'elapsed': q.get('run_time', '0:00'), 'limit': q.get('time_limit', ''), 'partition': q.get('partition', ''), 'nodes': q.get('nodes', ''), 'memory': q.get('memory_per_node', ''), 'cpus': str(q.get('cpus', '')), 'gres': q.get('tres_per_job', ''), 'start': q.get('start_time', ''), 'workdir': q.get('work_dir', ''), 'script': q.get('command', ''), 'reason': q.get('state_reason', '')}
+            def text(v):
+                if isinstance(v, (dict, list)): return json.dumps(v, separators=(',', ':'))
+                return str(v if v is not None else '')
+            j = {'id': text(q.get('job_id', '')), 'name': text(q.get('name', '')), 'user': text(q.get('user_name', user)), 'state': text(q.get('job_state', '')), 'elapsed': text(q.get('run_time', '0:00')), 'limit': text(q.get('time_limit', '')), 'partition': text(q.get('partition', '')), 'nodes': text(q.get('nodes', '')), 'memory': text(q.get('memory_per_node', '')), 'cpus': text(q.get('cpus', '')), 'gres': text(q.get('tres_per_job', '')), 'start': text(q.get('start_time', '')), 'workdir': text(q.get('work_dir', '')), 'script': text(q.get('command', '')), 'reason': text(q.get('state_reason', ''))}
             jobs[j['id']] = dict(jobs.get(j['id'], {}), **j)
     except (ValueError, TypeError):
         queue = run(['squeue', '-u', user, '-r', '-h', '-o', '%i|%j|%u|%T|%M|%l|%P|%N|%m|%C|%b|%S|%Z|%o|%r'])
