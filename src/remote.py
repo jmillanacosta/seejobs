@@ -25,8 +25,8 @@ def snapshot(days, user):
         jobs = {j['id']: j for j in rows(history, keys)}
     except Exception as e:
         warnings.append(str(e))
-    queue = run(['squeue', '-u', user, '-r', '-h', '-o', '%i|%j|%T|%M|%P|%N|%m|%C|%S|%Z|%r'])
-    for j in rows(queue, ['id', 'name', 'state', 'elapsed', 'partition', 'nodes', 'memory', 'cpus', 'start', 'workdir', 'reason']):
+    queue = run(['squeue', '-u', user, '-r', '-h', '-o', '%i|%j|%u|%T|%M|%l|%P|%N|%m|%C|%b|%S|%Z|%r'])
+    for j in rows(queue, ['id', 'name', 'user', 'state', 'elapsed', 'limit', 'partition', 'nodes', 'memory', 'cpus', 'gres', 'start', 'workdir', 'reason']):
         jobs[j['id']] = dict(jobs.get(j['id'], {}), **j)
     try:
         nodes = rows(run(['sinfo', '-N', '-h', '-o', '%N|%T|%C|%m|%E']), ['name', 'state', 'cpus', 'memory', 'reason'])
@@ -112,11 +112,42 @@ def detail(job):
     return {'meta': meta, 'steps': steps, 'logs': logs}
 
 
+def job_script(job):
+    jid = job['id']
+    if not re.fullmatch(r'[0-9]+(?:_[0-9]+)?', jid):
+        raise ValueError('Unsupported job ID')
+    text = run(['scontrol', 'write', 'batch_script', jid, '-'], optional=True)
+    if not text.strip():
+        raise ValueError('Slurm did not return a batch script for this job')
+    return {'script': text}
+
+
+def action(request):
+    job = request['job']; jid = job['id']
+    if not re.fullmatch(r'[0-9]+(?:_[0-9]+)?', jid):
+        raise ValueError('Unsupported job ID')
+    if request['op'] == 'cancel':
+        return {'result': run(['scancel', jid]) or 'Cancellation requested'}
+    if request['op'] == 'script':
+        return job_script(job)
+    if request['op'] == 'submit':
+        script = request.get('script', '')
+        if not script or len(script) > 200000 or not script.lstrip().startswith('#!'):
+            raise ValueError('Invalid batch script')
+        p = subprocess.run(['sbatch'], input=script, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=18)
+        if p.returncode:
+            raise RuntimeError(p.stderr.strip() or 'sbatch failed')
+        return {'result': p.stdout.strip()}
+    raise ValueError('Unknown action')
+
+
 if __name__ == '__main__':
     try:
         request = json.loads(sys.argv[1])
         if request['op'] == 'list':
             result = snapshot(request['days'], request['user'])
+        elif request['op'] in ('cancel', 'script', 'submit'):
+            result = action(request)
         elif request['op'] == 'log':
             result = logpage(request['job'], request['path'], request.get('offset', 0))
         else:

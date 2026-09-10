@@ -58,6 +58,8 @@ function App() {
   const [logIndex, setLogIndex] = useState(0); const [split, setSplit] = useState(true); const [scroll, setScroll] = useState(0);
   const [full, setFull] = useState(false); const [offset, setOffset] = useState(0); const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState(''); const [pendingAction, setPendingAction] = useState('');
+  const [draft, setDraft] = useState(null); const [editInput, setEditInput] = useState(null);
   const maxScroll=useRef(0);
   const jobs = data.jobs.filter(j => (!filter || (filter === 1 ? active(j) : failed(j))) && `${j.id} ${j.name} ${j.state}`.toLowerCase().includes(query.toLowerCase())).sort((a,b) => Number(active(b))-Number(active(a)) || Number(b.id.split('_')[0])-Number(a.id.split('_')[0]) || b.id.localeCompare(a.id));
   const selected = jobs.find(j => j.id === id) || jobs[0];
@@ -86,14 +88,20 @@ function App() {
   },[full,offset,log?.path,selectedId,tick]);
   const width=size[0], height=size[1]; const body=Math.max(6,height-8); const pageHeight=Math.max(2,body-7);
   useInput((input,key)=>{
+    if (editInput !== null && draft) { if (key.return) { const m=editInput.match(/^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.+)$/); if (m) setDraft(d=>({...d,overrides:{...d.overrides,[m[1]]:m[2]}})); else setActionMessage('Use HEADER=value, for example TimeLimit=01:00:00'); setEditInput(null); } else if (key.escape) setEditInput(null); else if (key.backspace||key.delete) setEditInput(v=>v.slice(0,-1)); else if (!key.ctrl&&!key.meta) setEditInput(v=>v+input); return; }
     if(search){if(key.return||key.escape)setSearch(false);else if(key.backspace||key.delete)setQuery(q=>q.slice(0,-1));else if(!key.ctrl&&!key.meta)setQuery(q=>q+input);return;}
     if(input==='q')exit();
+    else if(input==='c'&&selected){if(pendingAction==='cancel'){setPendingAction('');request(host,{op:'cancel',job:selected}).then(d=>setActionMessage(d.result)).catch(e=>setActionMessage(clean(e.message)));}else{setPendingAction('cancel');setActionMessage(`Press c again to cancel #${selected.id}`);}}
+    else if(input==='R'&&selected){setActionMessage('Fetching batch script…');request(host,{op:'script',job:selected}).then(d=>{setDraft({script:d.script,overrides:{}});setActionMessage('Draft ready: e edits a header, S submits, Esc discards.');}).catch(e=>setActionMessage(clean(e.message)));}
+    else if(input==='e'&&draft){setEditInput('');setActionMessage('Type HEADER=value then Enter (Esc cancels)');}
+    else if(input==='S'&&draft){const script=draft.script.replace(/^#SBATCH\s+--([A-Za-z][\w-]*)(?:=(.*))?$/gm,(line,key)=>draft.overrides[key.replaceAll('-','_')]===undefined?line:`#SBATCH --${key}=${draft.overrides[key.replaceAll('-','_')]}`);setActionMessage('Submitting rerun…');request(host,{op:'submit',script}).then(d=>{setDraft(null);setActionMessage(d.result);setTick(t=>t+1);}).catch(e=>setActionMessage(clean(e.message)));}
+    else if(key.escape&&draft){setDraft(null);setActionMessage('Rerun draft discarded.');}
     else if(input==='/')setSearch(true);
     else if(input==='a'){setFilter(f=>(f+1)%3);setId('');}
     else if(input==='r')setTick(t=>t+1);
     else if(input==='p')setPaused(p=>!p);
     else if(key.tab)setFocus(f=>!f);
-    else if(['1','2','3','4'].includes(input)){setView(Number(input));setScroll(input==='2'?1000000:0);}
+    else if(['1','2','3','4','5'].includes(input)){setView(Number(input));setScroll(input==='2'?1000000:0);}
     else if(input==='s'){setSplit(s=>!s);setView(2);}
     else if(input==='f'){setFull(f=>!f);setOffset(0);setScroll(0);setView(2);setFocus(true);}
     else if(key.leftArrow||key.rightArrow){setLogIndex(i=>Math.max(0,Math.min(logs.length-1,i+(key.rightArrow?1:-1))));setOffset(0);setScroll(0);}
@@ -126,6 +134,12 @@ function App() {
     const done=data.jobs.filter(j=>!active(j));const bad=done.filter(failed);
     const lines=[`${days} days · ${done.length} finished · ${bad.length} unsuccessful`,`${done.length?Math.round((done.length-bad.length)/done.length*100):0}% completed successfully`,'','JOB        STATE              ELAPSED     CPUS  REQUESTED RAM',...jobs.map(j=>`${j.id.padEnd(10)} ${j.state.padEnd(18)} ${j.elapsed.padEnd(11)} ${(j.cpus||'—').padEnd(5)} ${j.memory||'—'}`),'','Select a job and press 1 for measured RSS and CPU time.'];
     right=pane('PAST PERFORMANCE',displayLines(lines.join('\n'),body-4));
+  }else if(view===5){
+    const steps=detail?.steps||[]; const rss=steps.map(s=>Number.parseInt(s.rss)||0); const max=Math.max(1,...rss);
+    const lines=[`${selected?selected.name:'Select a job'} · live accounting view`,'','RESOURCE PROFILE',...steps.map((s,i)=>`${s.id}  CPU ${s.cpu||'—'}  elapsed ${s.elapsed||'—'}  RSS ${s.rss||'—'}`),'','PEAK RSS'];
+    if(rss.length) lines.push(...rss.map((v,i)=>`${steps[i].id.padEnd(12)} ${'█'.repeat(Math.max(1,Math.round(v/max*24)))} ${steps[i].rss||'—'}`)); else lines.push('No accounting samples are available yet.');
+    lines.push('','Refreshes every 5s while live. Filter jobs with /; tabs 1–5.');
+    right=pane('JOB PERFORMANCE · CPU / MEMORY',displayLines(lines.join('\n'),body-4));
   }else if(!selected){right=pane('JOBS',line(loading?'Connecting to Slurm…':'No jobs match. Press a to change filter or / to search.'));
   }else if(view===2){
     if(!logs.length)right=pane('LOGS',line(detailError||(!detail?'Loading log paths…':'No logs found. Interactive jobs may have no output file. Older custom paths may no longer be available.')));
@@ -135,7 +149,10 @@ function App() {
     }
   }else {
     const m=detail?.meta||{};
-    const lines=[`${selected.name}  #${selected.id}`,`${selected.state} · exit ${selected.exit||m.ExitCode||'—'}`,'',...diagnosis(selected,detail),'','RESOURCES / TIMING',`Elapsed ${selected.elapsed} / limit ${m.TimeLimit||'—'}`,`Nodes ${selected.nodes||'—'} · ${selected.partition} · CPUs ${selected.cpus}`,`Requested RAM ${selected.memory} · ${m.AllocTRES||m.ReqTRES||''}`,`Started ${selected.start||'—'} · ended ${selected.end||'—'}`,`Directory ${selected.workdir||'—'}`,'','MEASURED PERFORMANCE (accounting steps)',...(detail?.steps||[]).map(s=>`${s.id} · ${s.state} · peak RSS ${s.rss||'not recorded'} · CPU ${s.cpu||'—'} · elapsed ${s.elapsed}`),'','2 logs · f full file · Tab then ↑/↓ to scroll details'];
+    const lines=[`${selected.name}  #${selected.id}`,`${selected.state} · exit ${selected.exit||m.ExitCode||'—'}`,'',...diagnosis(selected,detail),'','RESOURCES / TIMING',`Elapsed ${selected.elapsed} / limit ${m.TimeLimit||'—'}`,`Nodes ${selected.nodes||'—'} · ${selected.partition} · CPUs ${selected.cpus}`,`Requested RAM ${selected.memory} · ${m.AllocTRES||m.ReqTRES||''}`,`Started ${selected.start||'—'} · ended ${selected.end||'—'}`,`Directory ${selected.workdir||'—'}`,'','MEASURED PERFORMANCE (accounting steps)',...(detail?.steps||[]).map(s=>`${s.id} · ${s.state} · peak RSS ${s.rss||'not recorded'} · CPU ${s.cpu||'—'} · elapsed ${s.elapsed}`),'','Actions: c cancel (confirm c) · R rerun · e edit header · S submit'];
+    if (draft) lines.push('','RERUN DRAFT',...Object.entries(draft.overrides).map(([k,v])=>`${k} = ${v}`),'e edit header  S submit  Esc discard');
+    if (editInput !== null) lines.push('',`Edit header: ${editInput}▌`);
+    if (actionMessage) lines.push('',actionMessage);
     right=pane('JOB OVERVIEW',displayLines(lines.join('\n'),body-4));
   }
   const idx=Math.max(0,jobs.findIndex(j=>j.id===selectedId)); const start=Math.max(0,Math.min(idx-Math.floor((body-4)/2),jobs.length-(body-4)));
@@ -143,8 +160,8 @@ function App() {
   return h(Box,{flexDirection:'column',height:height-1,width},
     h(Box,{justifyContent:'space-between'},line(' ◉ seejobs',{bold:true,color:'cyan'}),line(`${host} · ${paused?'PAUSED':loading?'refreshing…':updated||'connecting…'} `,{dimColor:true})),
     line(` ${data.jobs.filter(active).length} active   ${data.jobs.filter(failed).length} unsuccessful   ${data.jobs.length} jobs / ${days}d   ${data.nodes.filter(n=>/drain|down|fail/i.test(n.state)).length} unhealthy nodes`,{color:'white'}),
-    line(` 1 Overview   2 Logs   3 Nodes   4 History  │  ${['All','Active','Failed / cancelled'][filter]}  ${search?'Search: ':query?'Filter: ':''}${query}${search?'▌':''}`,{color:'cyan'}),
-    h(Box,{height:body},h(Box,{width:Math.min(36,Math.floor(width*.3)),flexShrink:0,flexDirection:'column',borderStyle:'round',borderColor:!focus?'cyan':'gray',paddingX:1},line(`JOBS ${!focus?'• focused':''}`,{bold:true,color:'cyan'}),...jobs.slice(start,start+body-4).map(j=>line(`${j.id===selectedId?'›':' '} ${j.id} ${j.state==='RUNNING'?'●':failed(j)?'×':j.state==='PENDING'?'◷':'✓'} ${j.name}`,{key:j.id,color:color(j),inverse:j.id===selectedId,wrap:'truncate'}))),right),
+    line(` 1 Overview   2 Logs   3 Nodes   4 History   5 Performance  │  ${['All','Active','Failed / cancelled'][filter]}  ${search?'Search: ':query?'Filter: ':''}${query}${search?'▌':''}`,{color:'cyan'}),
+    h(Box,{height:body},h(Box,{width:Math.min(36,Math.floor(width*.3)),flexShrink:0,flexDirection:'column',borderStyle:'round',borderColor:!focus?'cyan':'gray',paddingX:1},line(`JOBS ${!focus?'• focused':''}`,{bold:true,color:'cyan'}),...jobs.slice(start,start+body-4).map(j=>line(`${j.id===selectedId?'›':' '} ${j.id} ${j.state==='RUNNING'?'●':failed(j)?'×':j.state==='PENDING'?'◷':'✓'} ${j.name} ${j.partition||''} ${j.nodes||''} ${j.cpus||''} ${j.gres||''}`,{key:j.id,color:color(j),inverse:j.id===selectedId,wrap:'truncate'}))),right),
     line(error?`STALE · ${error}`:detailError?`DETAIL ERROR · ${detailError}`:data.warnings.join(' · ')||`Focus: ${focus?'details/logs':'job list'} · View ${view} · ${full?'full file': 'live tail'} · ${split?'split logs':'single log'}`,{color:error||detailError||data.warnings.length?'yellow':'gray',wrap:'truncate'}),
     line(' ↑↓ jobs/scroll  Tab focus  / search  a filter  r refresh  p pause  q quit',{dimColor:true}),
     line(' PgUp/PgDn scroll  ←→ file  s split  f full/tail  g/G top/bottom  [ ] chunks',{dimColor:true})
