@@ -52,9 +52,9 @@ function App() {
   const [data, setData] = useState({jobs:[], nodes:[], warnings:[]});
   const [id, setId] = useState(''); const [detail, setDetail] = useState(null);
   const [error, setError] = useState(''); const [detailError, setDetailError] = useState('');
-  const [updated, setUpdated] = useState(''); const [paused, setPaused] = useState(false);
+  const [updated, setUpdated] = useState('');
   const [tick, setTick] = useState(0); const [view, setView] = useState(1); const [focus, setFocus] = useState(false);
-  const [filter, setFilter] = useState(0); const [query, setQuery] = useState(''); const [search, setSearch] = useState(false); const [queueView, setQueueView] = useState(false); const [filterMode, setFilterMode] = useState(0); const [partition, setPartition] = useState('All'); const [userFilter, setUserFilter] = useState('My jobs'); const [statusFilter, setStatusFilter] = useState('All'); const [gpuFilter, setGpuFilter] = useState('All');
+  const [filter, setFilter] = useState(0); const [query, setQuery] = useState(''); const [search, setSearch] = useState(false); const [queueView, setQueueView] = useState(true); const [filterPanel, setFilterPanel] = useState(false); const [filterMode, setFilterMode] = useState(0); const [partition, setPartition] = useState('All'); const [userFilter, setUserFilter] = useState('My jobs'); const [statusFilter, setStatusFilter] = useState('All'); const [gpuFilter, setGpuFilter] = useState('All');
   const [logIndex, setLogIndex] = useState(0); const [split, setSplit] = useState(true); const [scroll, setScroll] = useState(0);
   const [full, setFull] = useState(false); const [offset, setOffset] = useState(0); const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -71,16 +71,16 @@ function App() {
   useEffect(() => {
     const c = new AbortController(); let busy = false;
     const load = async () => {if(busy) return; busy = true; setLoading(true); try {const d = await request(host,{op:'list',days,user},c.signal); if(!c.signal.aborted) {setData(d);setError('');setUpdated(new Date().toLocaleTimeString());}} catch(e) {if(!c.signal.aborted)setError(clean(e.message));} finally {busy=false; if(!c.signal.aborted)setLoading(false);}};
-    load(); const timer = paused ? null : setInterval(load,15000);
+    load(); const timer = setInterval(load,15000);
     return () => {clearInterval(timer); c.abort();};
-  }, [tick, paused]);
+  }, [tick]);
   useEffect(() => {setDetail(null);setDetailError('');setLogIndex(0);setScroll(view===2?1000000:0);setFull(false);setOffset(0);setPage(null);}, [selectedId]);
   useEffect(() => {
     if(!selectedId) return;
     const c = new AbortController(); let busy = false;
     const load = async () => {if(busy) return; busy=true; try {const d=await request(host,{op:'detail',job:jobRef.current},c.signal);if(!c.signal.aborted){setDetail(d);setDetailError(''); const rss=(d.steps||[]).reduce((n,s)=>Math.max(n,Number.parseInt(s.rss)||0),0); const cpu=(d.steps||[]).reduce((n,s)=>n+Number.parseFloat(s.cpu)||n,0); setPerfHistory(h=>[...h,{rss,cpu}].slice(-48));}}catch(e){if(!c.signal.aborted)setDetailError(clean(e.message));}finally{busy=false;}};
-    load(); const timer=paused?null:setInterval(load,5000); return()=>{clearInterval(timer);c.abort();};
-  }, [selectedId,tick,paused]);
+    load(); const timer=setInterval(load,5000); return()=>{clearInterval(timer);c.abort();};
+  }, [selectedId,tick]);
   const logs = detail?.logs || []; const log = logs[logIndex] || logs[0];
   useEffect(() => {
     if(!full || !log) {setPage(null);return;}
@@ -90,6 +90,7 @@ function App() {
   },[full,offset,log?.path,selectedId,tick]);
   const width=size[0], height=size[1]; const body=Math.max(6,height-8); const pageHeight=Math.max(2,body-7);
   useInput((input,key)=>{
+    if (filterPanel) { if (key.escape||key.return) {setFilterPanel(false); return;} if (key.upArrow||key.downArrow) {setFilterMode(m=>Math.max(0,Math.min(3,m+(key.downArrow?1:-1)))); return;} if (key.leftArrow||key.rightArrow||input==='['||input===']') {const dir=key.leftArrow||input==='['?-1:1; const next=(a,v)=>a[(Math.max(0,a.indexOf(v))+dir+a.length)%a.length]; if(filterMode===0)setPartition(next(partitions,partition)); else if(filterMode===1)setUserFilter(next(users,userFilter)); else if(filterMode===2)setStatusFilter(next(statuses,statusFilter)); else setGpuFilter(next(gpus,gpuFilter)); return;} }
     if (editInput !== null && draft) { if (key.return) { const m=editInput.match(/^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.+)$/); if (m) setDraft(d=>({...d,overrides:{...d.overrides,[m[1]]:m[2]}})); else setActionMessage('Use HEADER=value, for example TimeLimit=01:00:00'); setEditInput(null); } else if (key.escape) setEditInput(null); else if (key.backspace||key.delete) setEditInput(v=>v.slice(0,-1)); else if (!key.ctrl&&!key.meta) setEditInput(v=>v+input); return; }
     if(search){if(key.return||key.escape)setSearch(false);else if(key.backspace||key.delete)setQuery(q=>q.slice(0,-1));else if(!key.ctrl&&!key.meta)setQuery(q=>q+input);return;}
     if(input==='q')exit();
@@ -99,16 +100,14 @@ function App() {
     else if(input==='e'&&draft){setEditInput('');setActionMessage('Type HEADER=value then Enter (Esc cancels)');}
     else if(input==='S'&&draft){const script=draft.script.replace(/^#SBATCH\s+--([A-Za-z][\w-]*)(?:=(.*))?$/gm,(line,key)=>draft.overrides[key.replaceAll('-','_')]===undefined?line:`#SBATCH --${key}=${draft.overrides[key.replaceAll('-','_')]}`);setActionMessage('Submitting rerun…');request(host,{op:'submit',script}).then(d=>{setDraft(null);setActionMessage(d.result);setTick(t=>t+1);}).catch(e=>setActionMessage(clean(e.message)));}
     else if(key.escape&&draft){setDraft(null);setActionMessage('Rerun draft discarded.');}
-    else if(input==='/')setSearch(true);
-    else if(input==='a'){setFilter(f=>(f+1)%3);setId('');}
+    else if(input==='/')setSplit(true);
+    else if(input==='k')setSearch(true);
+    else if(input==='a'){setFilterPanel(true);setFilterMode(2);setId('');}
     else if(input==='r')setTick(t=>t+1);
-    else if(input==='p')setPaused(p=>!p);
+    else if(input==='f')setFilterPanel(true);
     else if(key.tab)setFocus(f=>!f);
-    else if(input==='o'||input==='O'){setView(1);setQueueView(false);} else if(input==='l'||input==='L'){setView(2);setQueueView(false);} else if(input==='n'||input==='N'){setView(3);setQueueView(false);} else if(input==='h'||input==='H'){setView(4);setQueueView(false);} else if(input==='p'||input==='P'){setView(5);setQueueView(false);} else if(input==='S'){setQueueView(true);setView(1);setScroll(0);}
-    else if(input==='F'){setFilterMode(m=>(m+1)%4);setActionMessage(`Filter: ${['partition','user','status','GPU use'][filterMode]}. Use [ and ] to change.`);}
-    else if(input===']'||input==='[' ){const dir=input===']'?1:-1; const next=(a,v)=>a[(Math.max(0,a.indexOf(v))+dir+a.length)%a.length]; if(filterMode===0)setPartition(next(partitions,partition)); else if(filterMode===1)setUserFilter(next(users,userFilter)); else if(filterMode===2)setStatusFilter(next(statuses,statusFilter)); else setGpuFilter(next(gpus,gpuFilter));}
-    else if(input==='s'){setSplit(s=>!s);setView(2);}
-    else if(input==='f'){setFull(f=>!f);setOffset(0);setScroll(0);setView(2);setFocus(true);}
+    else if(input==='o'||input==='O'){setView(1);setQueueView(false);} else if(input==='l'||input==='L'){setView(2);setQueueView(false);} else if(input==='n'||input==='N'){setView(3);setQueueView(false);} else if(input==='h'||input==='H'){setView(4);setQueueView(false);} else if(input==='m'||input==='M'){setView(5);setQueueView(false);} else if(input==='S'){setQueueView(true);setView(1);setScroll(0);}
+    else if(input==='v'){setFull(f=>!f);setOffset(0);setScroll(0);setView(2);setFocus(true);}
     else if(key.leftArrow||key.rightArrow){setLogIndex(i=>Math.max(0,Math.min(logs.length-1,i+(key.rightArrow?1:-1))));setOffset(0);setScroll(0);}
     else if(input===']'&&full&&page&&page.next<page.size)setOffset(page.next);
     else if(input==='['&&full)setOffset(o=>Math.max(0,o-48000));
@@ -133,7 +132,10 @@ function App() {
     return [line(`${start+1}–${Math.min(lines.length,start+available)} / ${lines.length} lines`,{dimColor:true}),...lines.slice(start,start+available).map((l,i)=>line(l||' ',{key:i,wrap:'truncate',color:/error|exception|failed|traceback/i.test(l)?'red':undefined}))];
   };
   let right;
-  if(queueView){
+  if(filterPanel){
+    const rows=[['Partition',partition],['User scope',userFilter],['Status',statusFilter],['GPU use',gpuFilter]];
+    const fl=rows.map(([k,v],i)=>`${i===filterMode?'›':' '} ${k.padEnd(14)} ${v}`); right=pane('FILTERS · ↑↓ FIELD · ←→ VALUE',displayLines([...fl,'','Enter/Esc close · k search · S queue'].join('\n'),body-4));
+  }else if(queueView){
     const qlines=['JOB ID       USER                 STATE       TIME       PARTITION  NODE(S)     CPU  GRES',...jobs.filter(j=>active(j)||j.state.includes('PENDING')).map(j=>`${j.id.padEnd(12)} ${(j.user||user).padEnd(20)} ${j.state.padEnd(11)} ${(j.elapsed||'—').padEnd(10)} ${(j.partition||'—').padEnd(10)} ${(j.nodes||'—').padEnd(11)} ${(j.cpus||'—').padEnd(4)} ${j.gres||'—'}`),'','F filters  [ ] change filter value  / search  Enter opens selected job'];
     right=pane('SQUEUE · LIVE QUEUE',displayLines(qlines.join('\n'),body-4));
   }else if(view===3){
@@ -168,12 +170,12 @@ function App() {
   const idx=Math.max(0,jobs.findIndex(j=>j.id===selectedId)); const start=Math.max(0,Math.min(idx-Math.floor((body-4)/2),jobs.length-(body-4)));
   if(width<72||height<18)return h(Box,{flexDirection:'column'},line('seejobs · enlarge terminal to at least 72 × 18',{color:'yellow'}),line('q quit'));
   return h(Box,{flexDirection:'column',height:height-1,width},
-    h(Box,{justifyContent:'space-between'},line(' ◉ seejobs',{bold:true,color:'cyan'}),line(`${host} · ${paused?'PAUSED':loading?'refreshing…':updated||'connecting…'} `,{dimColor:true})),
+    h(Box,{justifyContent:'space-between'},line(' ◉ seejobs',{bold:true,color:'cyan'}),line(`${host} · ${loading?'refreshing…':updated||'connecting…'} `,{dimColor:true})),
     line(` ${data.jobs.filter(active).length} active   ${data.jobs.filter(failed).length} unsuccessful   ${data.jobs.length} jobs / ${days}d   ${data.nodes.filter(n=>/drain|down|fail/i.test(n.state)).length} unhealthy nodes`,{color:'white'}),
-    h(Text,{key:'nav'},h(Text,{color:'yellow',bold:true},'O'),line('verview   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'L'),line('ogs   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'N'),line('odes   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'H'),line('istory   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'P'),line('erformance   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'S'),line(`queue  │ F:${['partition','user','status','GPU'][filterMode]}=${filterMode===0?partition:filterMode===1?userFilter:filterMode===2?statusFilter:gpuFilter}`,{color:'cyan'})),
+    h(Text,{key:'nav'},h(Text,{color:'yellow',bold:true},'O'),line('verview   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'L'),line('ogs   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'N'),line('odes   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'H'),line('istory   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'M'),line('etrics   ',{color:'cyan'}),h(Text,{color:'yellow',bold:true},'S'),line(`queue  │ F:filters`,{color:'cyan'})),
     h(Box,{height:body},h(Box,{width:Math.min(36,Math.floor(width*.3)),flexShrink:0,flexDirection:'column',borderStyle:'round',borderColor:!focus?'cyan':'gray',paddingX:1},line(`JOBS ${!focus?'• focused':''}`,{bold:true,color:'cyan'}),...jobs.slice(start,start+body-4).map(j=>line(`${j.id===selectedId?'›':' '} ${j.id} ${j.state==='RUNNING'?'●':failed(j)?'×':j.state==='PENDING'?'◷':'✓'} ${j.name} ${j.partition||''} ${j.nodes||''} ${j.cpus||''} ${j.gres||''}`,{key:j.id,color:color(j),inverse:j.id===selectedId,wrap:'truncate'}))),right),
     line(error?`STALE · ${error}`:detailError?`DETAIL ERROR · ${detailError}`:data.warnings.join(' · ')||`Focus: ${focus?'details/logs':'job list'} · View ${view} · ${full?'full file': 'live tail'} · ${split?'split logs':'single log'}`,{color:error||detailError||data.warnings.length?'yellow':'gray',wrap:'truncate'}),
-    line(' ↑↓ jobs/scroll  Tab focus  / search  a filter  r refresh  p pause  q quit',{dimColor:true}),
-    line(' PgUp/PgDn scroll  ←→ file  s split  f full/tail  g/G top/bottom  [ ] chunks',{dimColor:true})
+    line(' ↑↓ jobs/scroll  Tab focus  k search  f filters  r refresh  c cancel  q quit',{dimColor:true}),
+    line(' O/L/N/H/M panels  S queue  / split logs  PgUp/PgDn/Home/End scroll',{dimColor:true})
   );
 }
