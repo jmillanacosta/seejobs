@@ -25,9 +25,14 @@ def snapshot(days, user):
         jobs = {j['id']: j for j in rows(history, keys)}
     except Exception as e:
         warnings.append(str(e))
-    queue = run(['squeue', '-u', user, '-r', '-h', '-o', '%i|%j|%u|%T|%M|%l|%P|%N|%m|%C|%b|%S|%Z|%o|%r'])
-    for j in rows(queue, ['id', 'name', 'user', 'state', 'elapsed', 'limit', 'partition', 'nodes', 'memory', 'cpus', 'gres', 'start', 'workdir', 'script', 'reason']):
-        jobs[j['id']] = dict(jobs.get(j['id'], {}), **j)
+    queue_json = run(['squeue', '-u', user, '--json'], optional=True)
+    try:
+        for q in json.loads(queue_json).get('jobs', []):
+            j = {'id': str(q.get('job_id', '')), 'name': q.get('name', ''), 'user': q.get('user_name', user), 'state': q.get('job_state', ''), 'elapsed': q.get('run_time', '0:00'), 'limit': q.get('time_limit', ''), 'partition': q.get('partition', ''), 'nodes': q.get('nodes', ''), 'memory': q.get('memory_per_node', ''), 'cpus': str(q.get('cpus', '')), 'gres': q.get('tres_per_job', ''), 'start': q.get('start_time', ''), 'workdir': q.get('work_dir', ''), 'script': q.get('command', ''), 'reason': q.get('state_reason', '')}
+            jobs[j['id']] = dict(jobs.get(j['id'], {}), **j)
+    except (ValueError, TypeError):
+        queue = run(['squeue', '-u', user, '-r', '-h', '-o', '%i|%j|%u|%T|%M|%l|%P|%N|%m|%C|%b|%S|%Z|%o|%r'])
+        for j in rows(queue, ['id', 'name', 'user', 'state', 'elapsed', 'limit', 'partition', 'nodes', 'memory', 'cpus', 'gres', 'start', 'workdir', 'script', 'reason']): jobs[j['id']] = dict(jobs.get(j['id'], {}), **j)
     try:
         nodes = rows(run(['sinfo', '-N', '-h', '-o', '%N|%T|%C|%m|%E']), ['name', 'state', 'cpus', 'memory', 'reason'])
     except Exception as e:
