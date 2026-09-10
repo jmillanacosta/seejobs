@@ -16,7 +16,7 @@ export function request(host, payload, signal) {
         const data = JSON.parse(out);
         if (data.error) throw new Error(data.error);
         resolve(data);
-      } catch (e) {reject(new Error(err.trim() || (out ? e.message : `SSH exited ${code}. Check VPN and ssh ${host}.`)));}
+      } catch (e) {reject(new Error(err.trim() || (out ? e.message : `SSH exited ${code}. Check your SSH connection to ${host}.`)));}
     });
     child.stdin.on('error', () => {});
     child.stdin.end(script);
