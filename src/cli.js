@@ -128,7 +128,7 @@ function App() {
       else {const list=queueView?queueJobs:jobs; const i=list.findIndex(j=>j.id===selectedId);setId(list[Math.max(0,Math.min(list.length-1,i+delta))]?.id||'');}
     }
   });
-  const color=j=>failed(j)?'red':j.state==='PENDING'?'yellow':j.state==='RUNNING'||j.state==='COMPLETED'?'green':'gray';
+  const color=j=>failed(j)?'red':/PENDING/.test(String(j.state))?'yellow':/RUNNING|COMPLETED/.test(String(j.state))?'green':'gray';
   const sval=v=>String(v??'');
   let elementKey=0;
   const line=(s,props={})=>h(Text,{key:`auto-${elementKey++}`,...props},clean(s));
