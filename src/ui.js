@@ -478,8 +478,9 @@ export function App({host:initialHost,user:initialUser,days:initialDays,config={
   const status=busy?'Working…':notice||error||detailError||data.warnings.join(' · ')||'Ready';
   const footers=footerFor({modal,filter:filterDraft,draft,preview,validated:!!draft?.validated,panel,job:!!selected,cancellable:!!selected&&active(selected),group:row?.path&&!row?.job,full,focus,busy});
   const footerLine=s=>h(Text,{key:s,wrap:'truncate'},' ',...s.split(' · ').map((part,i)=>h(Text,{key:i},i?' · ':'',shortcut(part.split(' ')[0],part.includes(' ')?' '+part.split(' ').slice(1).join(' '):''))));
+  const clockIcon=error?'⚠':loading?'↻':'◷';
   return h(Box,{width,height:height-1,flexDirection:'column'},
-    h(Box,{height:1,flexShrink:0,justifyContent:'space-between'},text(' ◉ seejobs',{color:'cyan',bold:true}),text('◷ '+new Date(clock).toLocaleTimeString()+' · '+refreshSeconds+'s · '+(loading?'refreshing':updated?'updated '+new Date(updated).toLocaleTimeString():'connecting'),{color:'gray'})),
+    h(Box,{height:1,flexShrink:0,justifyContent:'space-between'},text(' ◉ seejobs',{color:'cyan',bold:true}),h(Text,null,text(clockIcon+' ',{color:error?'red':loading?'yellow':'green',bold:true}),text(new Date(clock).toLocaleTimeString(),{color:'gray'}),text(' · '+refreshSeconds+'s',{color:'gray'}))),
     h(Text,{wrap:'truncate'},' ',text('● '+jobs.filter(j=>j.state==='RUNNING').length+' running',{color:'green'}),'   ',text('◷ '+jobs.filter(j=>j.state==='PENDING').length+' pending',{color:'yellow'}),'   ',text('✓ '+jobs.filter(j=>j.state==='COMPLETED').length+' completed',{color:'green'}),'   ',text('× '+jobs.filter(failed).length+' unsuccessful',{color:'red'}),text('   ·   '+days+' day history',{color:'gray'})),
     nav,jobNav,
     text(' '+scopeLabel(filters,user)+'  ·  Partition: '+filters.partition+'  ·  Status: '+filters.status+'  ·  GPU: '+filters.gpu+(filters.project?' · Project: '+filters.project:'')+(filters.query?'  ·  Search: '+filters.query:''),{color:'gray'}),

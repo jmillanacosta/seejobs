@@ -9,7 +9,8 @@
   "files": [
     "src/*.js",
     "src/*.py",
-    "README.md"
+    "README.md",
+    "assets/*.png"
   ],
   "engines": {
     "node": ">=22"

@@ -2,6 +2,14 @@
 
 A clean terminal dashboard for Slurm. Find your projects, see why jobs wait or fail, read their logs, and prepare the next run.
 
+![seejobs queue with live and historical jobs](assets/seejobs-queue.png)
+
+![seejobs project dashboard](assets/seejobs-dashboard.png)
+
+![seejobs side-by-side log viewer](assets/seejobs-logs.png)
+
+![seejobs batch editor](assets/seejobs-editor.png)
+
 Warning: vibecoded for my own use, I don't have a plan to maintain it.
 
 ## Install
@@ -87,7 +95,7 @@ seejobs --days 30
 seejobs --once  # print one JSON snapshot
 ```
 
-`SEEJOBS_CONFIG`, `SEEJOBS_HOST`, and `SEEJOBS_USER` can override the settings path or connection. The portable [guide configuration format](docs/slurm-data.md#private-guide-format) contains no site-specific content.
+`SEEJOBS_CONFIG`, `SEEJOBS_HOST`, and `SEEJOBS_USER` can override the settings path or connection. Imported guide advice stays private and is never executed.
 
 ## Built with
 
