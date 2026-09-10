@@ -1,0 +1,27 @@
+{
+  "name": "seejobs",
+  "version": "1.0.0",
+  "description": "A calm Slurm job and log navigator over SSH",
+  "type": "module",
+  "bin": {
+    "seejobs": "src/cli.js"
+  },
+  "files": [
+    "src/*.js",
+    "src/*.py",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ink": "^7.1.0",
+    "react": "^19.2.0",
+    "wrap-ansi": "^9.0.2"
+  },
+  "license": "MIT"
+}
