@@ -17,6 +17,9 @@ Requires Node 22+, SSH authentication, and Python 3 plus Slurm commands on the s
 - **4 History**: recent outcomes, durations and resource requests. Select a job and use Overview for measured performance.
 - Up/down or j/k selects a job. Tab moves focus to scroll details/logs. Page Up/Down scroll without moving the job selection. g/G jumps to top/bottom of the loaded text.
 - `f` opens the full log from the beginning, in bounded 48 KB chunks. `[` / `]` loads the previous/next chunk; scroll within each chunk normally. This allows arbitrarily large logs without downloading the entire file. Byte boundaries may split a line or UTF-8 character.
+- The queue list includes Job ID, user, state, partition, node(s), CPUs, GRES, and elapsed time. `/` searches across these fields; `a` cycles all, active, and unsuccessful jobs.
+- `c` then `c` cancels the selected job. `R` recovers its batch script; `e` edits an existing `#SBATCH` header using `HEADER=value`; `S` submits the modified rerun. Escape discards the draft.
+- Tab `5` shows live accounting performance with per-step CPU time, elapsed time, peak RSS, and compact RSS bars.
 - `/` searches job ID/name/state; Enter finishes, Backspace edits. `a` cycles all/active/unsuccessful jobs. `r` refreshes, `p` pauses automatic refresh, `q` exits.
 
 Jobs and nodes refresh every 15 seconds. History defaults to seven days, configurable with `--days 1..365`. Connection errors preserve the last snapshot and mark it stale. Live RSS may be absent until accounting is updated; CPU time is accumulated CPU usage, not wall time. Cancelled/preempted jobs count as unsuccessful in the history summary.
